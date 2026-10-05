@@ -509,6 +509,15 @@ const (
 	// The bit is far above upstream lnd's allocations, so rebasing onto
 	// upstream can't hand the same bit to another meaning.
 	IndependentSecretsBit ChannelType = 1 << 40
+
+	// LocalIndependentSecretsBit indicates that this node generates its
+	// own per-commitment secrets with a shachain.IndependentProducer
+	// rather than a shachain. It is local, never negotiated, only set
+	// together with IndependentSecretsBit, and only by the dev option that
+	// lets a node exercise its peer's support for independent secrets.
+	// The producer's root is stored the same way either way; this bit
+	// says how to read it.
+	LocalIndependentSecretsBit ChannelType = 1 << 41
 )
 
 // IsSingleFunder returns true if the channel type if one of the known single
@@ -596,6 +605,12 @@ func (c ChannelType) HasUnifiedSigs() bool {
 // stored individually rather than in a shachain.
 func (c ChannelType) HasIndependentSecrets() bool {
 	return c&IndependentSecretsBit == IndependentSecretsBit
+}
+
+// HasLocalIndependentSecrets returns true if this node generates its own
+// per-commitment secrets with a shachain.IndependentProducer.
+func (c ChannelType) HasLocalIndependentSecrets() bool {
+	return c&LocalIndependentSecretsBit == LocalIndependentSecretsBit
 }
 
 // NewRemoteSecretStore returns an empty store for the remote party's
@@ -5370,6 +5385,27 @@ func fetchChanRevocationState(chanBucket kvdb.RBucket, channel *OpenChannel) err
 	)
 	if err != nil {
 		return err
+	}
+
+	// A node that generates its own secrets with an IndependentProducer
+	// stores the same root a shachain producer would; the channel type
+	// says which producer to rebuild from it.
+	if channel.ChanType.HasLocalIndependentSecrets() {
+		// Such secrets are only accepted by a peer that stores them
+		// all, so the bit is never set without the add-on.
+		if !channel.ChanType.HasIndependentSecrets() {
+			return fmt.Errorf("channel type %v generates "+
+				"independent secrets without "+
+				"option_independent_secrets", channel.ChanType)
+		}
+
+		producer, err := shachain.NewIndependentProducerFrom(
+			channel.RevocationProducer,
+		)
+		if err != nil {
+			return err
+		}
+		channel.RevocationProducer = producer
 	}
 
 	// If there aren't any bytes left in the buffer, then we don't yet have

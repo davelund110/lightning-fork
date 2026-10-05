@@ -304,3 +304,89 @@ func TestIndependentSecretsChanSyncMidRevocation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, [32]byte(*want), msg.LastRemoteCommitSecret)
 }
+
+// TestIndependentSecretsBothSidesIndependentProducer runs a channel on which
+// both sides generate their secrets with an IndependentProducer, as dev nodes
+// with the sender option do: every secret is accepted and stored, the
+// producer is rebuilt from the database after a restart so the same secrets
+// keep coming, and every revoked state stays punishable.
+func TestIndependentSecretsBothSidesIndependentProducer(t *testing.T) {
+	t.Parallel()
+
+	// Taproot channels also derive their musig2 nonces from the stored
+	// root, which the IndependentProducer keeps.
+	taproot := channeldb.SingleFunderTweaklessBit |
+		channeldb.AnchorOutputsBit | channeldb.SimpleTaprootFeatureBit |
+		channeldb.IndependentSecretsBit
+
+	for name, chanType := range map[string]channeldb.ChannelType{
+		"anchors": independentSecretsChanType(true),
+		"taproot": taproot,
+	} {
+		t.Run(name, func(t *testing.T) {
+			local := channeldb.LocalIndependentSecretsBit
+			testBothSidesIndependentProducer(t, chanType|local)
+		})
+	}
+}
+
+func testBothSidesIndependentProducer(t *testing.T,
+	chanType channeldb.ChannelType) {
+
+	alice, bob, err := CreateTestChannels(t, chanType)
+	require.NoError(t, err)
+
+	for _, c := range []*LightningChannel{alice, bob} {
+		producer := c.channelState.RevocationProducer
+		_, ok := producer.(*shachain.IndependentProducer)
+		require.True(t, ok, "expected an IndependentProducer")
+	}
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, sendAndSettle(t, alice, bob, i))
+	}
+
+	// Restart both. Each must rebuild its IndependentProducer from the
+	// stored root, or it would reveal secrets for points it never sent.
+	alice, err = restartChannel(alice)
+	require.NoError(t, err)
+	bob, err = restartChannel(bob)
+	require.NoError(t, err)
+	for _, c := range []*LightningChannel{alice, bob} {
+		producer := c.channelState.RevocationProducer
+		_, ok := producer.(*shachain.IndependentProducer)
+		require.True(t, ok, "expected an IndependentProducer "+
+			"after restart")
+	}
+	assertNoChanSyncNeeded(t, alice, bob)
+
+	for i := 3; i < 6; i++ {
+		require.NoError(t, sendAndSettle(t, alice, bob, i))
+	}
+
+	// Each side can punish every revoked state of the other.
+	pairs := [][2]*LightningChannel{{alice, bob}, {bob, alice}}
+	for _, pair := range pairs {
+		self, peer := pair[0], pair[1]
+		tip := self.channelState.RemoteCommitment.CommitHeight
+		require.Greater(t, tip, uint64(4))
+
+		for h := uint64(0); h < tip; h++ {
+			br, err := NewBreachRetribution(
+				self.channelState, h, 101, nil,
+				fn.Some[AuxLeafStore](&MockAuxLeafStore{}),
+				fn.Some[AuxContractResolver](
+					&MockAuxContractResolver{},
+				),
+			)
+			require.NoError(t, err, "state %d", h)
+
+			secret, err := peer.channelState.RevocationProducer.
+				AtIndex(h)
+			require.NoError(t, err)
+			point := input.ComputeCommitmentPoint(secret[:])
+			require.True(t, point.IsEqual(br.KeyRing.CommitPoint),
+				"state %d", h)
+		}
+	}
+}

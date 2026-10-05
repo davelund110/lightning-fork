@@ -170,7 +170,37 @@ func TestIndependentSecretsFundingFlow(t *testing.T) {
 		bobBits     []lnwire.FeatureBit
 		chanType    *lnwire.ChannelType
 		independent bool
+
+		// aliceSender turns on the dev option that makes Alice
+		// generate her own secrets without a shachain.
+		aliceSender bool
 	}{
+		{
+			name:        "alice sends independent secrets",
+			aliceBits:   with,
+			bobBits:     with,
+			independent: true,
+			aliceSender: true,
+		},
+		{
+			// Taproot nonces derive from the same root, so they
+			// survive the change of producer.
+			name:        "alice sends independent secrets on taproot",
+			aliceBits:   with,
+			bobBits:     with,
+			chanType:    &taproot,
+			independent: true,
+			aliceSender: true,
+		},
+		{
+			// The dev option only applies where the peer stores
+			// every secret.
+			name:        "sender option without the add-on",
+			aliceBits:   with,
+			bobBits:     base,
+			independent: false,
+			aliceSender: true,
+		},
 		{
 			name:        "both signal it",
 			aliceBits:   with,
@@ -204,6 +234,9 @@ func TestIndependentSecretsFundingFlow(t *testing.T) {
 			bob.localFeatures = tc.bobBits
 			bob.remoteFeatures = tc.aliceBits
 
+			aliceCfg := &alice.fundingMgr.cfg.Wallet.Cfg
+			aliceCfg.IndependentSecretsSender = tc.aliceSender
+
 			updateChan := make(chan *lnrpc.OpenStatusUpdate)
 			fundChannel(
 				t, alice, bob, btcutil.Amount(500000), 0,
@@ -227,6 +260,18 @@ func TestIndependentSecretsFundingFlow(t *testing.T) {
 					chanType.HasIndependentSecrets(),
 				)
 				require.Equal(t, tc.independent, isIndependent)
+
+				// Only Alice, and only on an independent
+				// channel, generates her secrets without a
+				// shachain.
+				sender := node == alice && tc.aliceSender &&
+					tc.independent
+				producer := channel.RevocationProducer
+				_, isProducer :=
+					producer.(*shachain.IndependentProducer)
+				require.Equal(t, sender, isProducer)
+				require.Equal(t, sender,
+					chanType.HasLocalIndependentSecrets())
 			}
 		})
 	}
