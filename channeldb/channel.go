@@ -496,6 +496,19 @@ const (
 	// open and fixed for the channel's life: both sides must compute the
 	// same digest or every signature they exchange fails to verify.
 	UnifiedSigsBit ChannelType = 1 << 13
+
+	// IndependentSecretsBit indicates that option_independent_secrets was
+	// negotiated for this channel: the remote party's per-commitment
+	// secrets are not required to come from a shachain, so this node
+	// stores every one it receives (alongside the revocation log entry of
+	// the commitment it revokes) instead of compressing them. Negotiated
+	// at open and fixed for the channel's life. It only changes what this
+	// node accepts and stores; how this node generates its own secrets is
+	// unchanged.
+	//
+	// The bit is far above upstream lnd's allocations, so rebasing onto
+	// upstream can't hand the same bit to another meaning.
+	IndependentSecretsBit ChannelType = 1 << 40
 )
 
 // IsSingleFunder returns true if the channel type if one of the known single
@@ -576,6 +589,41 @@ func (c ChannelType) HasTapscriptRoot() bool {
 // into the unified signature hash.
 func (c ChannelType) HasUnifiedSigs() bool {
 	return c&UnifiedSigsBit == UnifiedSigsBit
+}
+
+// HasIndependentSecrets returns true if option_independent_secrets was
+// negotiated for the channel, so the remote party's per-commitment secrets are
+// stored individually rather than in a shachain.
+func (c ChannelType) HasIndependentSecrets() bool {
+	return c&IndependentSecretsBit == IndependentSecretsBit
+}
+
+// NewRemoteSecretStore returns an empty store for the remote party's
+// per-commitment secrets that suits the channel type: an IndependentStore when
+// option_independent_secrets was negotiated, otherwise a shachain
+// RevocationStore.
+func NewRemoteSecretStore(chanType ChannelType) shachain.Store {
+	if chanType.HasIndependentSecrets() {
+		return shachain.NewIndependentStore()
+	}
+
+	return shachain.NewRevocationStore()
+}
+
+// UsesIndependentSecrets reports whether the remote party's per-commitment
+// secrets are kept as on a channel with option_independent_secrets: each one
+// with the revocation log entry of the commitment it revokes, rather than in
+// a shachain. The store type is checked as well as the channel type, so that
+// a channel whose two disagree still looks for its secrets in the revocation
+// log instead of failing to punish a breach.
+func (c *OpenChannel) UsesIndependentSecrets() bool {
+	if c.ChanType.HasIndependentSecrets() {
+		return true
+	}
+
+	_, ok := c.RevocationStore.(*shachain.IndependentStore)
+
+	return ok
 }
 
 // IsTaprootFinal returns true if the channel is using final/production taproot
@@ -2138,6 +2186,15 @@ func (c *OpenChannel) ChanSyncMsg() (*lnwire.ChannelReestablish, error) {
 		remoteSecret, err := c.RevocationStore.LookUp(
 			remoteChainTipHeight - 1,
 		)
+
+		// An IndependentStore only keeps its newest secrets in memory.
+		// If it has run further ahead of this copy of the remote
+		// commitment than that, the secret is in the revocation log.
+		if errors.Is(err, shachain.ErrSecretNotRetained) {
+			remoteSecret, err = c.loggedCommitSecret(
+				remoteChainTipHeight - 1,
+			)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -3724,11 +3781,21 @@ func (c *OpenChannel) AdvanceCommitChainTail(fwdPkg *FwdPkg,
 			return err
 		}
 
+		// On channels with option_independent_secrets the revocation
+		// store keeps only the latest secret, which is the one that
+		// revokes the commitment being logged here, so it's persisted
+		// with that log entry where a breach retribution can find it.
+		commitSecret, err := c.revokedCommitSecret()
+		if err != nil {
+			return err
+		}
+
 		// With the commitment pointer swapped, we can now add the
 		// revoked (prior) state to the revocation log.
-		err = putRevocationLog(
+		err = putRevocationLogWithSecret(
 			logBucket, &c.RemoteCommitment, ourOutputIndex,
 			theirOutputIndex, c.Db.parent.noRevLogAmtData,
+			commitSecret,
 		)
 		if err != nil {
 			return err
@@ -4617,6 +4684,83 @@ func (c *OpenChannel) LatestCommitments() (*ChannelCommitment, *ChannelCommitmen
 	}
 
 	return &c.LocalCommitment, &c.RemoteCommitment, nil
+}
+
+// revokedCommitSecret returns the secret that revokes the current remote
+// commitment when option_independent_secrets was negotiated, and None
+// otherwise. It's called while that commitment is being moved to the
+// revocation log, just after the remote party revealed the secret.
+//
+// NOTE: The channel's mutex must be held.
+func (c *OpenChannel) revokedCommitSecret() (fn.Option[[32]byte], error) {
+	if !c.UsesIndependentSecrets() {
+		return fn.None[[32]byte](), nil
+	}
+
+	// The secret must be the newest one in the store. If it isn't, the
+	// store and the commitment chain are out of step, and persisting both
+	// would store an inconsistent state, so refuse instead.
+	height := c.RemoteCommitment.CommitHeight
+	counted, ok := c.RevocationStore.(interface{ NumEntries() uint64 })
+	if ok && counted.NumEntries() != height+1 {
+		return fn.None[[32]byte](), fmt.Errorf("revocation store "+
+			"holds %d secrets, want the newest to revoke "+
+			"remote commitment %d", counted.NumEntries(), height)
+	}
+
+	secret, err := c.RevocationStore.LookUp(height)
+	if err != nil {
+		return fn.None[[32]byte](), fmt.Errorf("no per-commitment "+
+			"secret for revoked remote commitment %d: %w", height,
+			err)
+	}
+
+	return fn.Some([32]byte(*secret)), nil
+}
+
+// loggedCommitSecret reads the per-commitment secret that revoked the remote
+// commitment at height from its revocation log entry, where a channel with
+// option_independent_secrets keeps it.
+func (c *OpenChannel) loggedCommitSecret(height uint64) (*chainhash.Hash,
+	error) {
+
+	var secret *chainhash.Hash
+	err := kvdb.View(c.Db.backend, func(tx kvdb.RTx) error {
+		chanBucket, err := fetchChanBucket(
+			tx, c.IdentityPub, &c.FundingOutpoint, c.ChainHash,
+		)
+		if err != nil {
+			return err
+		}
+
+		rl, _, err := fetchRevocationLogCompatible(chanBucket, height)
+		if err != nil {
+			return err
+		}
+		if rl == nil {
+			return nil
+		}
+
+		rl.CommitSecret.WhenSome(
+			func(r tlv.RecordT[tlv.TlvType65537, [32]byte]) {
+				h := chainhash.Hash(r.Val)
+				secret = &h
+			},
+		)
+
+		return nil
+	}, func() {
+		secret = nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if secret == nil {
+		return nil, fmt.Errorf("revocation log for remote commitment "+
+			"%d has no per-commitment secret", height)
+	}
+
+	return secret, nil
 }
 
 // RemoteRevocationStore returns the most up to date commitment version of the
