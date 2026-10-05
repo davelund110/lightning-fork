@@ -31,7 +31,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chanfunding"
 	"github.com/lightningnetwork/lnd/lnwallet/chanvalidate"
 	"github.com/lightningnetwork/lnd/lnwire"
-	"github.com/lightningnetwork/lnd/shachain"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -238,6 +237,11 @@ type InitFundingReserveMsg struct {
 	// UnifiedSigs is true if this channel's bilateral signatures opt into
 	// the unified signature hash, binding them to the BLAKE2b chain.
 	UnifiedSigs bool
+
+	// IndependentSecrets is true if option_independent_secrets was
+	// negotiated: the remote party's per-commitment secrets are stored
+	// individually instead of being required to form a shachain.
+	IndependentSecrets bool
 
 	// Memo is any arbitrary information we wish to store locally about the
 	// channel that will be useful to our future selves.
@@ -1972,7 +1976,9 @@ func (l *LightningWallet) handleChanPointReady(req *continueContributionMsg) {
 	// Initialize an empty sha-chain for them, tracking the current pending
 	// revocation hash (we don't yet know the preimage so we can't add it
 	// to the chain).
-	s := shachain.NewRevocationStore()
+	s := channeldb.NewRemoteSecretStore(
+		pendingReservation.partialState.ChanType,
+	)
 	pendingReservation.partialState.RevocationStore = s
 
 	// Store their current commitment point. We'll need this after the
@@ -2138,7 +2144,9 @@ func (l *LightningWallet) handleSingleContribution(req *addSingleContributionMsg
 	// Initialize an empty sha-chain for them, tracking the current pending
 	// revocation hash (we don't yet know the preimage so we can't add it
 	// to the chain).
-	remotePreimageStore := shachain.NewRevocationStore()
+	remotePreimageStore := channeldb.NewRemoteSecretStore(
+		chanState.ChanType,
+	)
 	chanState.RevocationStore = remotePreimageStore
 
 	// Now that we've received their first commitment point, we'll store it

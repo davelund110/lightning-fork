@@ -308,6 +308,12 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 		binary.BigEndian.Uint64(chanIDBytes[:]),
 	)
 
+	// Each side stores the other's per-commitment secrets in the store
+	// the channel type calls for.
+	remoteSecretStore := func() shachain.Store {
+		return channeldb.NewRemoteSecretStore(chanType)
+	}
+
 	aliceChannelState := &channeldb.OpenChannel{
 		LocalChanCfg:            aliceCfg,
 		RemoteChanCfg:           bobCfg,
@@ -319,7 +325,7 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 		Capacity:                channelCapacity,
 		RemoteCurrentRevocation: bobCommitPoint,
 		RevocationProducer:      alicePreimageProducer,
-		RevocationStore:         shachain.NewRevocationStore(),
+		RevocationStore:         remoteSecretStore(),
 		LocalCommitment:         aliceLocalCommit,
 		RemoteCommitment:        aliceRemoteCommit,
 		Db:                      dbAlice.ChannelStateDB(),
@@ -337,7 +343,7 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 		Capacity:                channelCapacity,
 		RemoteCurrentRevocation: aliceCommitPoint,
 		RevocationProducer:      bobPreimageProducer,
-		RevocationStore:         shachain.NewRevocationStore(),
+		RevocationStore:         remoteSecretStore(),
 		LocalCommitment:         bobLocalCommit,
 		RemoteCommitment:        bobRemoteCommit,
 		Db:                      dbBob.ChannelStateDB(),
