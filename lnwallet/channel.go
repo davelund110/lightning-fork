@@ -2130,6 +2130,35 @@ type BreachRetribution struct {
 	ChanType channeldb.ChannelType
 }
 
+// revokedCommitSecret returns the remote party's per-commitment secret for the
+// revoked commitment at stateNum. On channels with option_independent_secrets
+// the secret is stored with the commitment's revocation log entry; otherwise
+// it's derived from the shachain revocation store.
+func revokedCommitSecret(chanState *channeldb.OpenChannel,
+	revokedLog *channeldb.RevocationLog,
+	stateNum uint64) (*chainhash.Hash, error) {
+
+	if revokedLog != nil {
+		var secret *chainhash.Hash
+		revokedLog.CommitSecret.WhenSome(
+			func(r tlv.RecordT[tlv.TlvType65537, [32]byte]) {
+				h := chainhash.Hash(r.Val)
+				secret = &h
+			},
+		)
+		if secret != nil {
+			return secret, nil
+		}
+	}
+
+	if chanState.UsesIndependentSecrets() {
+		return nil, fmt.Errorf("revocation log for state %d has no "+
+			"per-commitment secret", stateNum)
+	}
+
+	return chanState.RevocationStore.LookUp(stateNum)
+}
+
 // NewBreachRetribution creates a new fully populated BreachRetribution for the
 // passed channel, at a particular revoked state number. If the spend
 // transaction that the breach retribution should target is known, then it can
@@ -2217,7 +2246,9 @@ func newBreachRetribution(chanState *channeldb.OpenChannel, stateNum uint64,
 	// With the state number broadcast known, we can now derive/restore the
 	// proper revocation preimage necessary to sweep the remote party's
 	// output.
-	revocationPreimage, err := chanState.RevocationStore.LookUp(stateNum)
+	revocationPreimage, err := revokedCommitSecret(
+		chanState, revokedLog, stateNum,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -6151,11 +6182,25 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 	// revealed secret to derive a revocation key with our revocation base
 	// point, then it matches the current revocation of the remote party.
 	// We check this before adding the secret to the store, so a revocation
-	// for the wrong point leaves our state untouched.
+	// for the wrong point leaves our state untouched. On a channel with
+	// option_independent_secrets it's the only check a secret gets, since
+	// the store doesn't relate it to the earlier ones.
 	currentCommitPoint := lc.channelState.RemoteCurrentRevocation
 	derivedCommitPoint := input.ComputeCommitmentPoint(revMsg.Revocation[:])
 	if !derivedCommitPoint.IsEqual(currentCommitPoint) {
 		return nil, nil, fmt.Errorf("revocation key mismatch")
+	}
+
+	// On such a channel, also insist that the secret is a valid private
+	// key as it was sent, 0 < s < n, rather than one that only matches
+	// the point once reduced modulo n.
+	if lc.channelState.UsesIndependentSecrets() {
+		var s btcec.ModNScalar
+		overflow := s.SetByteSlice(revMsg.Revocation[:])
+		if overflow || s.IsZero() {
+			return nil, nil, fmt.Errorf("per-commitment secret " +
+				"is not a valid private key")
+		}
 	}
 
 	// Ensure that the new pre-image can be placed in preimage store.
