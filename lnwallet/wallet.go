@@ -31,6 +31,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chanfunding"
 	"github.com/lightningnetwork/lnd/lnwallet/chanvalidate"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/shachain"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -1462,6 +1463,26 @@ func (l *LightningWallet) initOurContribution(reservation *ChannelReservation,
 	)
 	if err != nil {
 		return err
+	}
+
+	// A dev build can generate this node's secrets without a shachain on
+	// channels whose peer stores them all. The producer keeps the same
+	// root, and the taproot nonce producer is derived from the new
+	// producer exactly as it will be after a restart.
+	chanType := reservation.partialState.ChanType
+	if l.Cfg.IndependentSecretsSender && chanType.HasIndependentSecrets() {
+		producer, err = shachain.NewIndependentProducerFrom(producer)
+		if err != nil {
+			return err
+		}
+		taprootNonceProducer, err = channeldb.DeriveMusig2Shachain(
+			producer,
+		)
+		if err != nil {
+			return err
+		}
+		reservation.partialState.ChanType |=
+			channeldb.LocalIndependentSecretsBit
 	}
 
 	firstPreimage, err := producer.AtIndex(0)

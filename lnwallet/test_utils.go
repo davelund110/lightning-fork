@@ -217,7 +217,19 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 	if err != nil {
 		return nil, nil, err
 	}
-	bobPreimageProducer := shachain.NewRevocationProducer(*bobRoot)
+	var bobPreimageProducer shachain.Producer = shachain.
+		NewRevocationProducer(*bobRoot)
+
+	// With LocalIndependentSecretsBit, both sides generate their secrets
+	// without a shachain, as a dev node does.
+	if chanType.HasLocalIndependentSecrets() {
+		bobPreimageProducer, err = shachain.NewIndependentProducerFrom(
+			bobPreimageProducer,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	bobFirstRevoke, err := bobPreimageProducer.AtIndex(0)
 	if err != nil {
 		return nil, nil, err
@@ -228,7 +240,15 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 	if err != nil {
 		return nil, nil, err
 	}
-	alicePreimageProducer := shachain.NewRevocationProducer(*aliceRoot)
+	var alicePreimageProducer shachain.Producer = shachain.
+		NewRevocationProducer(*aliceRoot)
+	if chanType.HasLocalIndependentSecrets() {
+		alicePreimageProducer, err = shachain.
+			NewIndependentProducerFrom(alicePreimageProducer)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	aliceFirstRevoke, err := alicePreimageProducer.AtIndex(0)
 	if err != nil {
 		return nil, nil, err
