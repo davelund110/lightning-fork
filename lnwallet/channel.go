@@ -2130,6 +2130,24 @@ type BreachRetribution struct {
 	ChanType channeldb.ChannelType
 }
 
+// logCommitSecret returns the per-commitment secret stored with a revocation
+// log entry, if any.
+func logCommitSecret(revokedLog *channeldb.RevocationLog) *chainhash.Hash {
+	if revokedLog == nil {
+		return nil
+	}
+
+	var secret *chainhash.Hash
+	revokedLog.CommitSecret.WhenSome(
+		func(r tlv.RecordT[tlv.TlvType65537, [32]byte]) {
+			h := chainhash.Hash(r.Val)
+			secret = &h
+		},
+	)
+
+	return secret
+}
+
 // revokedCommitSecret returns the remote party's per-commitment secret for the
 // revoked commitment at stateNum. On channels with option_independent_secrets
 // the secret is stored with the commitment's revocation log entry; otherwise
@@ -2138,20 +2156,24 @@ func revokedCommitSecret(chanState *channeldb.OpenChannel,
 	revokedLog *channeldb.RevocationLog,
 	stateNum uint64) (*chainhash.Hash, error) {
 
-	if revokedLog != nil {
-		var secret *chainhash.Hash
-		revokedLog.CommitSecret.WhenSome(
-			func(r tlv.RecordT[tlv.TlvType65537, [32]byte]) {
-				h := chainhash.Hash(r.Val)
-				secret = &h
-			},
-		)
-		if secret != nil {
-			return secret, nil
-		}
+	if secret := logCommitSecret(revokedLog); secret != nil {
+		return secret, nil
 	}
 
 	if chanState.UsesIndependentSecrets() {
+		// The entry may be in a splice's log, kept for a commitment on
+		// another funding output, and written without the secret (by
+		// a version that didn't store it there). The channel's own log
+		// has an entry at every revoked number, written in the same
+		// transaction, and one secret revokes the commitment with that
+		// number on every funding output.
+		own, _, err := chanState.FindPreviousState(stateNum)
+		if err == nil {
+			if secret := logCommitSecret(own); secret != nil {
+				return secret, nil
+			}
+		}
+
 		return nil, fmt.Errorf("revocation log for state %d has no "+
 			"per-commitment secret", stateNum)
 	}

@@ -2771,7 +2771,10 @@ func (c *OpenChannel) UpdateCommitment(newCommitment *ChannelCommitment,
 			return fmt.Errorf("unable to store chan "+
 				"revocations: %v", err)
 		}
-		err = applySpliceWrites(chanBucket, splices, false, false)
+		err = applySpliceWrites(
+			chanBucket, splices, false, false,
+			fn.None[[32]byte](), 0,
+		)
 		if err != nil {
 			return err
 		}
@@ -3564,7 +3567,10 @@ func (c *OpenChannel) AppendRemoteCommitChain(diff *CommitDiff,
 			return err
 		}
 
-		return applySpliceWrites(chanBucket, splices, false, false)
+		return applySpliceWrites(
+			chanBucket, splices, false, false,
+			fn.None[[32]byte](), 0,
+		)
 	}, func() {})
 }
 
@@ -3817,6 +3823,7 @@ func (c *OpenChannel) AdvanceCommitChainTail(fwdPkg *FwdPkg,
 		}
 		err = applySpliceWrites(
 			chanBucket, splices, true, c.Db.parent.noRevLogAmtData,
+			commitSecret, c.RemoteCommitment.CommitHeight,
 		)
 		if err != nil {
 			return err
