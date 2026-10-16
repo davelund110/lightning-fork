@@ -36,6 +36,9 @@ generates its own: they still come from its shachain.
 - **Breaches.** When the chain watcher sees a revoked state on chain, it builds
   the breach retribution from that state's revocation log entry, secret
   included; the watchtower client does the same for its backups.
+- **Splices.** While a splice is pending, the peer has a commitment on each
+  funding output at the same number, and one secret revokes all of them. The
+  secret is stored with each of their log entries, the splice's own included.
 - **Static channel backups** are unchanged. They never carried revocation
   state, so a node restored from one can't punish a breach, with or without
   the add-on.
