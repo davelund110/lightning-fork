@@ -2684,6 +2684,16 @@ func syncNewChannel(tx kvdb.RwTx, c *OpenChannel, addrs []net.Addr) error {
 		return err
 	}
 
+	// An older version can't read the revocation state of a channel with
+	// option_independent_secrets: from now on it must refuse the database
+	// rather than fail when it reaches the channel. This covers channels
+	// restored from a backup too.
+	if c.ChanType.HasIndependentSecrets() {
+		if err := markIndependentSecrets(tx); err != nil {
+			return err
+		}
+	}
+
 	nodeInfoBucket, err := tx.CreateTopLevelBucket(nodeInfoBucket)
 	if err != nil {
 		return err

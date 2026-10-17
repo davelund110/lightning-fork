@@ -60,11 +60,18 @@ the add-on keep it.
 ## Downgrading
 
 Downgrading to a version of Lightning Fork without this change is not
-supported once any channel has used the add-on. Such a version can't read the
-channel's stored state, and that stays true after the channel closes, because
-lnd keeps a copy of a closed channel's state. While the channel is open or
-still being resolved, the older version refuses to start; afterwards, its
-`closedchannels` and `pendingchannels` calls fail.
+supported once any channel has used the add-on, because such a version can't
+read the channel's stored state. lnd keeps a copy of a closed channel's state,
+so that stays true after the channel closes.
+
+To make that fail clearly, the database moves to version 39 when it first
+stores a channel with the add-on, whether new or restored from a backup. An
+older version then refuses to start with a clear error ("Refusing to revert
+from db_version=39"). Without that, it would fail to decode the channel while
+the channel is open or still being resolved, and once it has closed it would
+start and fail its `closedchannels` and `pendingchannels` calls. A node that
+never had such a channel stays at the version before, and can still go back
+to an older release.
 
 ## Testing against it
 
