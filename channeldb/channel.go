@@ -2686,8 +2686,10 @@ func syncNewChannel(tx kvdb.RwTx, c *OpenChannel, addrs []net.Addr) error {
 
 	// An older version can't read the revocation state of a channel with
 	// option_independent_secrets: from now on it must refuse the database
-	// rather than fail when it reaches the channel. This covers channels
-	// restored from a backup too.
+	// rather than fail when it reaches the channel. A static backup doesn't
+	// carry the bit, so this is a channel being opened, including the
+	// pending channel the fundee saves on funding_created, before any
+	// funding transaction exists.
 	if c.ChanType.HasIndependentSecrets() {
 		if err := markIndependentSecrets(tx); err != nil {
 			return err

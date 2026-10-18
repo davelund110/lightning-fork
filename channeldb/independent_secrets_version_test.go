@@ -20,7 +20,8 @@ func dbVersion(t *testing.T, db *DB) uint32 {
 
 // TestIndependentSecretsDBVersion checks that the database moves to the
 // independent secrets version when it first stores a channel with
-// option_independent_secrets, new or restored, and only then; that a marked
+// option_independent_secrets, new or with the restored status, and only
+// then; that a marked
 // database still opens, with splicing on or off; and that a newer one is
 // refused. An older release refuses a marked database by its own check: the
 // version is past the newest one it knows.

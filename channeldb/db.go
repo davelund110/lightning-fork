@@ -2223,12 +2223,29 @@ func markIndependentSecrets(tx kvdb.RwTx) error {
 // it's off. The independent secrets mark is never run as a migration:
 // markIndependentSecrets applies it with the first such channel.
 func targetVersions(splicing bool) []mandatoryVersion {
-	versions := dbVersions[:len(dbVersions)-1]
-	if splicing {
-		return versions
+	return filterTargetVersions(dbVersions, splicing)
+}
+
+// filterTargetVersions leaves out of versions the marks targetVersions
+// doesn't run, by number rather than by position, so that a migration
+// appended after them still runs.
+func filterTargetVersions(versions []mandatoryVersion,
+	splicing bool) []mandatoryVersion {
+
+	targets := make([]mandatoryVersion, 0, len(versions))
+	for _, v := range versions {
+		switch {
+		case v.number == independentSecretsDBVersion:
+			continue
+
+		case v.number == splicingDBVersion && !splicing:
+			continue
+		}
+
+		targets = append(targets, v)
 	}
 
-	return versions[:len(versions)-1]
+	return targets
 }
 
 func getLatestDBVersion(versions []mandatoryVersion) uint32 {

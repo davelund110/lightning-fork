@@ -65,13 +65,17 @@ read the channel's stored state. lnd keeps a copy of a closed channel's state,
 so that stays true after the channel closes.
 
 To make that fail clearly, the database moves to version 39 when it first
-stores a channel with the add-on, whether new or restored from a backup. An
+stores a channel with the add-on. That includes the pending channel saved
+when a peer starts an open with us, before any funding transaction exists, so
+with the option on by default, a peer that offers it can mark the database
+just by starting an open, even one it never completes. An
 older version then refuses to start with a clear error ("Refusing to revert
 from db_version=39"). Without that, it would fail to decode the channel while
 the channel is open or still being resolved, and once it has closed it would
 start and fail its `closedchannels` and `pendingchannels` calls. A node that
-never had such a channel stays at the version before, and can still go back
-to an older release.
+never had such a channel, even a pending one, stays at the version before, and
+can still go back to an older release. To keep that option, turn the add-on
+off with `protocol.no-independent-secrets`.
 
 ## Testing against it
 
