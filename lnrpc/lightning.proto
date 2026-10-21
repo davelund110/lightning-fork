@@ -2022,6 +2022,11 @@ message ChannelCloseSummary {
     channel_point is then the funding output that was closed.
     */
     string original_channel_point = 1002;
+
+    // Whether the channel used option_independent_secrets. A closed channel
+    // with it still keeps its stored state, so a build without the option
+    // can't open this database. False when the channel's history isn't kept.
+    bool independent_secrets = 2001;
 }
 
 enum ResolutionType {

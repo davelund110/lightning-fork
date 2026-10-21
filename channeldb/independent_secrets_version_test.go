@@ -73,6 +73,21 @@ func TestIndependentSecretsDBVersion(t *testing.T) {
 			dbVersion(t, db))
 	})
 
+	t.Run("an independent store marks without the bit", func(t *testing.T) {
+		t.Parallel()
+
+		db, err := MakeTestDB(t)
+		require.NoError(t, err)
+
+		// Not reachable today: the store is created from the channel
+		// type. If the two ever disagree, the store still marks.
+		channel := createTestChannelState(t, db.ChannelStateDB())
+		channel.RevocationStore = shachain.NewIndependentStore()
+		require.NoError(t, channel.SyncPending(defaultAddr, 100))
+		require.Equal(t, uint32(independentSecretsDBVersion),
+			dbVersion(t, db))
+	})
+
 	t.Run("a restored channel marks", func(t *testing.T) {
 		t.Parallel()
 

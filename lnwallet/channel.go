@@ -2168,14 +2168,20 @@ func revokedCommitSecret(chanState *channeldb.OpenChannel,
 		// transaction, and one secret revokes the commitment with that
 		// number on every funding output.
 		own, _, err := chanState.FindPreviousState(stateNum)
-		if err == nil {
-			if secret := logCommitSecret(own); secret != nil {
-				return secret, nil
-			}
+		if err != nil {
+			return nil, fmt.Errorf("no per-commitment secret for "+
+				"revoked state %d: its revocation log entry "+
+				"has none, and the channel's own entry can't "+
+				"be read: %w", stateNum, err)
+		}
+		if secret := logCommitSecret(own); secret != nil {
+			return secret, nil
 		}
 
-		return nil, fmt.Errorf("revocation log for state %d has no "+
-			"per-commitment secret", stateNum)
+		return nil, fmt.Errorf("no per-commitment secret for revoked "+
+			"state %d: neither its revocation log entry nor the "+
+			"channel's own has one, so the breach can't be "+
+			"punished", stateNum)
 	}
 
 	return chanState.RevocationStore.LookUp(stateNum)

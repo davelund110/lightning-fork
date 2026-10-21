@@ -2686,11 +2686,14 @@ func syncNewChannel(tx kvdb.RwTx, c *OpenChannel, addrs []net.Addr) error {
 
 	// An older version can't read the revocation state of a channel with
 	// option_independent_secrets: from now on it must refuse the database
-	// rather than fail when it reaches the channel. A static backup doesn't
-	// carry the bit, so this is a channel being opened, including the
-	// pending channel the fundee saves on funding_created, before any
-	// funding transaction exists.
-	if c.ChanType.HasIndependentSecrets() {
+	// rather than fail when it reaches the channel. Every channel saved
+	// here with the add-on marks it: one being opened, including the
+	// pending channel the fundee saves on funding_created before any
+	// funding transaction exists, and one restored with a type that
+	// carries the bit (a static backup doesn't record it today, but the
+	// marking doesn't rely on that). UsesIndependentSecrets also counts
+	// the store type, in case the two ever disagree.
+	if c.UsesIndependentSecrets() {
 		if err := markIndependentSecrets(tx); err != nil {
 			return err
 		}

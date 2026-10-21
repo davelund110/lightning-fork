@@ -119,6 +119,7 @@ func TestIndependentSecretsSpliceBreach(t *testing.T) {
 	all := []revoked{pendingOld, pendingNew, atLock, afterLock}
 	for _, r := range all {
 		requireBreachFor(t, alice, r.height, r.tx, r.bob, r.alice)
+		requireBreachPoint(t, alice, producer, r.height, r.tx)
 	}
 
 	// And after a restart, from the database alone.
@@ -126,7 +127,30 @@ func TestIndependentSecretsSpliceBreach(t *testing.T) {
 	require.NoError(t, err)
 	for _, r := range all {
 		requireBreachFor(t, alice, r.height, r.tx, r.bob, r.alice)
+		requireBreachPoint(t, alice, producer, r.height, r.tx)
 	}
+}
+
+// requireBreachPoint checks that the retribution for Bob's revoked
+// commitment at height uses the point of the secret he revealed for it, so
+// the keys it signs with are the revocation keys of that commitment. The
+// balances requireBreachFor checks wouldn't catch a wrong secret.
+func requireBreachPoint(t *testing.T, alice *LightningChannel,
+	producer *randomSecretProducer, height uint64, tx *wire.MsgTx) {
+
+	t.Helper()
+
+	br, err := NewBreachRetribution(
+		alice.channelState, height, 1, tx,
+		fn.None[AuxLeafStore](), fn.None[AuxContractResolver](),
+	)
+	require.NoError(t, err)
+
+	secret, err := producer.AtIndex(height)
+	require.NoError(t, err)
+	point := input.ComputeCommitmentPoint(secret[:])
+	require.True(t, point.IsEqual(br.KeyRing.CommitPoint),
+		"height %d", height)
 }
 
 // TestIndependentSecretsSpliceTower is TestSpliceTowerRetributions on a

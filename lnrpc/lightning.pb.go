@@ -6322,8 +6322,12 @@ type ChannelCloseSummary struct {
 	//The outpoint the channel was opened with, when a splice moved it:
 	//channel_point is then the funding output that was closed.
 	OriginalChannelPoint string `protobuf:"bytes,1002,opt,name=original_channel_point,json=originalChannelPoint,proto3" json:"original_channel_point,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Whether the channel used option_independent_secrets. A closed channel
+	// with it still keeps its stored state, so a build without the option
+	// can't open this database. False when the channel's history isn't kept.
+	IndependentSecrets bool `protobuf:"varint,2001,opt,name=independent_secrets,json=independentSecrets,proto3" json:"independent_secrets,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ChannelCloseSummary) Reset() {
@@ -6473,6 +6477,13 @@ func (x *ChannelCloseSummary) GetOriginalChannelPoint() string {
 		return x.OriginalChannelPoint
 	}
 	return ""
+}
+
+func (x *ChannelCloseSummary) GetIndependentSecrets() bool {
+	if x != nil {
+		return x.IndependentSecrets
+	}
+	return false
 }
 
 type Resolution struct {
@@ -20376,7 +20387,7 @@ const file_lightning_proto_rawDesc = "" +
 	"\x12ListAliasesRequest\"E\n" +
 	"\x13ListAliasesResponse\x12.\n" +
 	"\n" +
-	"alias_maps\x18\x01 \x03(\v2\x0f.lnrpc.AliasMapR\taliasMaps\"\x9d\a\n" +
+	"alias_maps\x18\x01 \x03(\v2\x0f.lnrpc.AliasMapR\taliasMaps\"\xcf\a\n" +
 	"\x13ChannelCloseSummary\x12#\n" +
 	"\rchannel_point\x18\x01 \x01(\tR\fchannelPoint\x12\x1b\n" +
 	"\achan_id\x18\x02 \x01(\x04B\x020\x01R\x06chanId\x12\x1d\n" +
@@ -20398,7 +20409,8 @@ const file_lightning_proto_rawDesc = "" +
 	"aliasScids\x12;\n" +
 	"\x18zero_conf_confirmed_scid\x18\x0f \x01(\x04B\x020\x01R\x15zeroConfConfirmedScid\x12.\n" +
 	"\x13custom_channel_data\x18\x10 \x01(\fR\x11customChannelData\x125\n" +
-	"\x16original_channel_point\x18\xea\a \x01(\tR\x14originalChannelPoint\"\x8a\x01\n" +
+	"\x16original_channel_point\x18\xea\a \x01(\tR\x14originalChannelPoint\x120\n" +
+	"\x13independent_secrets\x18\xd1\x0f \x01(\bR\x12independentSecrets\"\x8a\x01\n" +
 	"\vClosureType\x12\x15\n" +
 	"\x11COOPERATIVE_CLOSE\x10\x00\x12\x15\n" +
 	"\x11LOCAL_FORCE_CLOSE\x10\x01\x12\x16\n" +

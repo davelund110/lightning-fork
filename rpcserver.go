@@ -5443,6 +5443,9 @@ func (r *rpcServer) createRPCClosedChannel(
 	case channeldb.ErrChannelNotFound:
 
 	case nil:
+		channel.IndependentSecrets =
+			histChan.ChanType.HasIndependentSecrets()
+
 		if histChan.IsZeroConf() && histChan.ZeroConfConfirmed() {
 			// If the channel was zero-conf, it may have confirmed.
 			// Populate the confirmed SCID if so.
