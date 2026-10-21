@@ -344,7 +344,7 @@ const (
 	// remote party may generate them by any method, including jointly
 	// across k-of-n signers.
 	//
-	// Proposed as 266/267 in a draft bLIP.
+	// Specified as 266/267 in the fork's BOLTs (lightning-blake2b/bolts#17).
 	IndependentSecretsRequired FeatureBit = 266
 
 	// IndependentSecretsOptional is the optional form of

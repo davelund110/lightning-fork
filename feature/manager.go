@@ -96,8 +96,8 @@ type Config struct {
 	// on mainnet, where the opt-in cannot be switched off.
 	NoUnifiedSigs bool
 
-	// NoIndependentSecrets unsets option_independent_secrets, which is
-	// otherwise signalled by default.
+	// NoIndependentSecrets unsets option_independent_secrets. lnd sets it
+	// unless the operator turns on protocol.independent-secrets.
 	NoIndependentSecrets bool
 }
 

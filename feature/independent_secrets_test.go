@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNoIndependentSecrets checks that option_independent_secrets is
-// advertised in init and node_announcement by default, as optional so peers
-// without it still open ordinary channels, and not at all when the operator
-// turns it off.
+// TestNoIndependentSecrets checks that the feature manager advertises
+// option_independent_secrets in init and node_announcement unless told not
+// to (lnd tells it not to unless protocol.independent-secrets is set), and
+// only as optional, so peers without it still open ordinary channels.
 func TestNoIndependentSecrets(t *testing.T) {
 	t.Parallel()
 

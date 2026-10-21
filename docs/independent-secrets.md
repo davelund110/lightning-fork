@@ -1,7 +1,8 @@
 # Independent per-commitment secrets
 
 Lightning Fork supports `option_independent_secrets` (feature bits 266/267,
-proposed in a draft bLIP).
+specified in the fork's BOLTs:
+[lightning-blake2b/bolts#17](https://github.com/lightning-blake2b/bolts/pull/17)).
 On a channel with it, this node accepts per-commitment secrets from its peer
 that do not come from a shachain, and stores every one of them.
 
@@ -23,10 +24,10 @@ generates its own: they still come from its shachain.
 
 ## What it does
 
-- **Signalled by default.** The optional bit 267 is set in `init` and
-  `node_announcement`. A new channel uses the add-on when both peers signal it
-  and agree on it in `channel_type`. With a peer that doesn't signal it, the
-  channel opens the normal way.
+- **Off by default.** With `protocol.independent-secrets` set, the optional
+  bit 267 is set in `init` and `node_announcement`. A new channel uses the
+  add-on when both peers signal it and agree on it in `channel_type`. With a
+  peer that doesn't signal it, the channel opens the normal way.
 - **Storage.** Each secret is stored with the revocation log entry of the
   commitment it revokes, written in the same database transaction. That's 38
   bytes per revoked state (a 32-byte secret in a TLV record), next to data the
@@ -47,15 +48,15 @@ generates its own: they still come from its shachain.
 `lncli listchannels` and `lncli pendingchannels` report the add-on per channel
 as `independent_secrets`.
 
-## Turning it off
+## Turning it on
 
 ```
 [protocol]
-protocol.no-independent-secrets=true
+protocol.independent-secrets=true
 ```
 
-New channels then keep requiring shachain secrets. Channels already opened with
-the add-on keep it.
+Turning it off again only affects new channels: those already opened with the
+add-on keep it.
 
 ## Downgrading
 
@@ -67,20 +68,20 @@ so that stays true after the channel closes.
 To make that fail clearly, the database moves to version 39 when it first
 stores a channel with the add-on. That includes the pending channel saved
 when a peer starts an open with us, before any funding transaction exists, so
-with the option on by default, a peer that offers it can mark the database
-just by starting an open, even one it never completes. An
-older version then refuses to start with a clear error ("Refusing to revert
+with the option on, a peer that offers it can mark the database just by
+starting an open, even one it never completes. An older version then refuses to start with a clear error ("Refusing to revert
 from db_version=39"). Without that, it would fail to decode the channel while
 the channel is open or still being resolved, and once it has closed it would
 start and fail its `closedchannels` and `pendingchannels` calls. A node that
 never had such a channel, even a pending one, stays at the version before, and
-can still go back to an older release. To keep that option, turn the add-on
-off with `protocol.no-independent-secrets`.
+can still go back to an older release. That's why the add-on is off by
+default for now: a node that leaves it off can't be marked.
 
 ## Testing against it
 
 Integration builds (`-tags integration`) have a dev option,
-`--dev.independent-secrets-sender`, that makes this node generate its own
+`--dev.independent-secrets-sender` (which needs `protocol.independent-secrets`),
+that makes this node generate its own
 secrets on new channels with the add-on using a key derivation function
 instead of a shachain:
 

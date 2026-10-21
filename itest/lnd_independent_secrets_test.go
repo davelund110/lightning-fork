@@ -17,10 +17,10 @@ import (
 // state.
 //
 // Bob runs with --dev.independent-secrets-sender, so on such a channel he
-// generates his secrets with a KDF instead of a shachain. Carol runs the
-// defaults. The test checks that:
-//   - both nodes signal the add-on by default and negotiate it, and report it
-//     over RPC;
+// generates his secrets with a KDF instead of a shachain. Both run with
+// --protocol.independent-secrets, since the add-on is off by default. The test
+// checks that:
+//   - both nodes negotiate the add-on and report it over RPC;
 //   - payments flow while Carol accepts and stores Bob's secrets, also across
 //     restarts of both nodes;
 //   - when Bob broadcasts a revoked commitment, Carol sweeps it with the
@@ -33,7 +33,13 @@ func testIndependentSecrets(ht *lntest.HarnessTest) {
 	)
 
 	commitType := lnrpc.CommitmentType_ANCHORS
-	nodeArgs := lntest.NodeArgsForCommitType(commitType)
+	nodeArgs := append(
+		lntest.NodeArgsForCommitType(commitType),
+		"--protocol.independent-secrets",
+	)
+
+	// Clip the capacity, so the two appends below don't share an array.
+	nodeArgs = nodeArgs[:len(nodeArgs):len(nodeArgs)]
 
 	// Carol is the honest party. --nolisten and a long backoff keep Bob
 	// from reconnecting to her before his breach, which would trigger data
@@ -52,7 +58,7 @@ func testIndependentSecrets(ht *lntest.HarnessTest) {
 		Amt:            chanAmt,
 	})
 
-	// Neither node was told to: the add-on is on by default.
+	// Both nodes signal the add-on, so the channel has it.
 	assertIndependentSecrets := func(hn *node.HarnessNode) {
 		ch := ht.QueryChannelByChanPoint(hn, chanPoint)
 		require.True(ht, ch.IndependentSecrets,
