@@ -49,3 +49,35 @@ func TestIndependentSecretsDependsOnChannelType(t *testing.T) {
 		lnwire.ExplicitChannelTypeOptional,
 	)))
 }
+
+// TestCustomFeaturesRefuseKnownBits checks that custom-init and
+// custom-nodeann can't set a bit lnd defines, such as either bit of
+// option_independent_secrets: the odd one would turn the add-on on with its
+// option off, and the even one isn't valid outside channel_type.
+func TestCustomFeaturesRefuseKnownBits(t *testing.T) {
+	t.Parallel()
+
+	for _, set := range []Set{SetInit, SetNodeAnn} {
+		for _, bit := range []lnwire.FeatureBit{
+			lnwire.IndependentSecretsOptional,
+			lnwire.IndependentSecretsRequired,
+		} {
+			_, err := NewManager(Config{
+				NoIndependentSecrets: true,
+				CustomFeatures: map[Set][]lnwire.FeatureBit{
+					set: {bit},
+				},
+			})
+			require.ErrorIs(t, err, lnwire.ErrFeatureStandard,
+				"set %v, bit %v", set, bit)
+		}
+
+		// An unknown bit is still accepted.
+		_, err := NewManager(Config{
+			CustomFeatures: map[Set][]lnwire.FeatureBit{
+				set: {lnwire.FeatureBit(333)},
+			},
+		})
+		require.NoError(t, err, "set %v", set)
+	}
+}

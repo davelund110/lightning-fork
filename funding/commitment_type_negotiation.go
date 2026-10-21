@@ -114,7 +114,7 @@ func withUnifiedSigs(chanType lnwire.ChannelType, local,
 func withIndependentSecrets(chanType lnwire.ChannelType, local,
 	remote *lnwire.FeatureVector) lnwire.ChannelType {
 
-	if !hasFeatures(local, remote, lnwire.IndependentSecretsOptional) {
+	if !bothSignalIndependentSecrets(local, remote) {
 		return chanType
 	}
 
@@ -123,6 +123,15 @@ func withIndependentSecrets(chanType lnwire.ChannelType, local,
 	withBit.Set(lnwire.IndependentSecretsRequired)
 
 	return lnwire.ChannelType(*withBit)
+}
+
+// bothSignalIndependentSecrets reports whether both peers set the optional bit
+// of option_independent_secrets. It checks bit 267 itself rather than
+// HasFeature, which also counts the even bit: bit 266 is only valid in
+// channel_type, so setting it in init doesn't signal support.
+func bothSignalIndependentSecrets(local, remote *lnwire.FeatureVector) bool {
+	return local.IsSet(lnwire.IndependentSecretsOptional) &&
+		remote.IsSet(lnwire.IndependentSecretsOptional)
 }
 
 // withAddOns adds to chanType every add-on bit that both peers support and
@@ -241,10 +250,7 @@ func explicitNegotiateCommitmentType(channelType lnwire.ChannelType, local,
 	// the same way: it changes how per-commitment secrets are stored, not
 	// the transactions. Check both sides support it, then take it off.
 	if channelFeatures.IsSet(lnwire.IndependentSecretsRequired) {
-		if !hasFeatures(
-			local, remote, lnwire.IndependentSecretsOptional,
-		) {
-
+		if !bothSignalIndependentSecrets(local, remote) {
 			return 0, errUnsupportedChannelType
 		}
 

@@ -271,6 +271,19 @@ func newManager(cfg Config, desc setDesc) (*Manager, error) {
 					"already set", custom)
 			}
 
+			// A bit lnd defines is set by its own option, if at
+			// all, not as a custom bit: otherwise custom-init could
+			// turn on a feature its option leaves off, such as
+			// option_independent_secrets, which moves the database
+			// to a version older releases can't open. The same rule
+			// applies to updates at runtime (ValidateUpdate).
+			if name, known := lnwire.Features[custom]; known {
+				return nil, fmt.Errorf("feature bit: %v (%v) "+
+					"is defined by lnd and can't be set as "+
+					"a custom feature: %w", custom, name,
+					lnwire.ErrFeatureStandard)
+			}
+
 			if err := raw.SafeSet(custom); err != nil {
 				return nil, fmt.Errorf("%w: could not set "+
 					"feature: %d", err, custom)
