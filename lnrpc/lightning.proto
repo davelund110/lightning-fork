@@ -928,6 +928,12 @@ message ChannelAcceptRequest {
     // Whether the initiator wants to use the scid-alias channel type. This is
     // separate from the feature bit.
     bool wants_scid_alias = 16;
+
+    // Whether the initiator proposes option_independent_secrets in the
+    // channel type. On such a channel this node stores every per-commitment
+    // secret the initiator reveals instead of requiring them to come from a
+    // shachain. commitment_type doesn't show it.
+    bool wants_independent_secrets = 2001;
 }
 
 message ChannelAcceptResponse {

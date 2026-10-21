@@ -4233,6 +4233,10 @@
         "wants_scid_alias": {
           "type": "boolean",
           "description": "Whether the initiator wants to use the scid-alias channel type. This is\nseparate from the feature bit."
+        },
+        "wants_independent_secrets": {
+          "type": "boolean",
+          "description": "Whether the initiator proposes option_independent_secrets in the\nchannel type. On such a channel this node stores every per-commitment\nsecret the initiator reveals instead of requiring them to come from a\nshachain. commitment_type doesn't show it."
         }
       }
     },

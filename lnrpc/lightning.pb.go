@@ -2749,8 +2749,13 @@ type ChannelAcceptRequest struct {
 	// Whether the initiator wants to use the scid-alias channel type. This is
 	// separate from the feature bit.
 	WantsScidAlias bool `protobuf:"varint,16,opt,name=wants_scid_alias,json=wantsScidAlias,proto3" json:"wants_scid_alias,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Whether the initiator proposes option_independent_secrets in the
+	// channel type. On such a channel this node stores every per-commitment
+	// secret the initiator reveals instead of requiring them to come from a
+	// shachain. commitment_type doesn't show it.
+	WantsIndependentSecrets bool `protobuf:"varint,2001,opt,name=wants_independent_secrets,json=wantsIndependentSecrets,proto3" json:"wants_independent_secrets,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *ChannelAcceptRequest) Reset() {
@@ -2891,6 +2896,13 @@ func (x *ChannelAcceptRequest) GetWantsZeroConf() bool {
 func (x *ChannelAcceptRequest) GetWantsScidAlias() bool {
 	if x != nil {
 		return x.WantsScidAlias
+	}
+	return false
+}
+
+func (x *ChannelAcceptRequest) GetWantsIndependentSecrets() bool {
+	if x != nil {
+		return x.WantsIndependentSecrets
 	}
 	return false
 }
@@ -20060,7 +20072,7 @@ const file_lightning_proto_rawDesc = "" +
 	"\n" +
 	"fixed_msat\x18\x03 \x01(\x03H\x00R\tfixedMsat\x12\x1a\n" +
 	"\apercent\x18\x02 \x01(\x03H\x00R\apercentB\a\n" +
-	"\x05limit\"\xec\x04\n" +
+	"\x05limit\"\xa9\x05\n" +
 	"\x14ChannelAcceptRequest\x12\x1f\n" +
 	"\vnode_pubkey\x18\x01 \x01(\fR\n" +
 	"nodePubkey\x12\x1d\n" +
@@ -20083,7 +20095,8 @@ const file_lightning_proto_rawDesc = "" +
 	"\rchannel_flags\x18\r \x01(\rR\fchannelFlags\x12>\n" +
 	"\x0fcommitment_type\x18\x0e \x01(\x0e2\x15.lnrpc.CommitmentTypeR\x0ecommitmentType\x12&\n" +
 	"\x0fwants_zero_conf\x18\x0f \x01(\bR\rwantsZeroConf\x12(\n" +
-	"\x10wants_scid_alias\x18\x10 \x01(\bR\x0ewantsScidAlias\"\x90\x03\n" +
+	"\x10wants_scid_alias\x18\x10 \x01(\bR\x0ewantsScidAlias\x12;\n" +
+	"\x19wants_independent_secrets\x18\xd1\x0f \x01(\bR\x17wantsIndependentSecrets\"\x90\x03\n" +
 	"\x15ChannelAcceptResponse\x12\x16\n" +
 	"\x06accept\x18\x01 \x01(\bR\x06accept\x12&\n" +
 	"\x0fpending_chan_id\x18\x02 \x01(\fR\rpendingChanId\x12\x14\n" +
