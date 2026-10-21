@@ -1,7 +1,7 @@
 # Independent per-commitment secrets
 
 Lightning Fork supports `option_independent_secrets` (feature bits 266/267,
-specified in the fork's BOLTs:
+specified in the fork's BOLTs,
 [lightning-blake2b/bolts#17](https://github.com/lightning-blake2b/bolts/pull/17)).
 On a channel with it, this node accepts per-commitment secrets from its peer
 that do not come from a shachain, and stores every one of them.
@@ -45,8 +45,11 @@ generates its own: they still come from its shachain.
   the add-on.
 - **Existing channels** keep their type and behave exactly as before.
 
-`lncli listchannels` and `lncli pendingchannels` report the add-on per channel
-as `independent_secrets`.
+`lncli listchannels`, `lncli pendingchannels` and `lncli closedchannels`
+report the add-on per channel as `independent_secrets`. The channel acceptor
+RPC gets `wants_independent_secrets` for a proposed channel, so an acceptor
+can see the add-on and refuse it per channel; its `commitment_type` leaves the
+bit out, as it does for `option_unified_sigs`.
 
 ## Turning it on
 
@@ -69,8 +72,9 @@ To make that fail clearly, the database moves to version 39 when it first
 stores a channel with the add-on. That includes the pending channel saved
 when a peer starts an open with us, before any funding transaction exists, so
 with the option on, a peer that offers it can mark the database just by
-starting an open, even one it never completes. An older version then refuses to start with a clear error ("Refusing to revert
-from db_version=39"). Without that, it would fail to decode the channel while
+starting an open, even one it never completes. An older version then refuses
+to start with a clear error ("Refusing to revert from db_version=39").
+Without that, it would fail to decode the channel while
 the channel is open or still being resolved, and once it has closed it would
 start and fail its `closedchannels` and `pendingchannels` calls. A node that
 never had such a channel, even a pending one, stays at the version before, and
@@ -97,3 +101,9 @@ root lnd already stores; the channel records that it uses them in a local
 channel type bit, so it keeps using them for its whole life, even if the
 option is later turned off. It is not available in release builds: a single
 signer gains nothing from it.
+
+A node restored from a static channel backup gets a shachain producer back,
+since the backup doesn't record that the dev sender was used. Such a node
+can't regenerate the secrets it revealed on the restored channel, so it can't
+sweep its own `to_local` output with an external tool after a force close.
+That only matters for testing: release builds don't have the dev sender.

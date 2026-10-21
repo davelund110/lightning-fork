@@ -45,7 +45,7 @@ func testIndependentSecrets(ht *lntest.HarnessTest) {
 	// from reconnecting to her before his breach, which would trigger data
 	// loss protection instead.
 	carol := ht.NewNode("Carol", append(
-		nodeArgs, "--hodl.exit-settle", "--nolisten", "--minbackoff=1h",
+		nodeArgs, "--nolisten", "--minbackoff=1h",
 	))
 	bob := ht.NewNode("Bob", append(
 		nodeArgs, "--dev.independent-secrets-sender",
@@ -111,18 +111,19 @@ func testIndependentSecrets(ht *lntest.HarnessTest) {
 	block := ht.MineBlocksAndAssertNumTxes(1, 1)[0]
 	ht.AssertTxInBlock(block, *breachTXID)
 
-	// On an anchor channel the first two outputs are anchors, so Bob's
-	// to_remote output is the third. Carol's justice transaction spends it
-	// together with Bob's revoked to_local output, which she can only do
-	// with the secret Bob revealed for this state.
-	toRemote := wire.OutPoint{Hash: *breachTXID, Index: 2}
-	justiceTx := ht.AssertOutpointInMempool(toRemote)
+	// Outputs are sorted by amount, so on this anchor channel the first
+	// two are the anchors and the third is Bob's revoked to_local, his
+	// smaller balance. Carol's justice transaction spends it, which she
+	// can only do with the secret Bob revealed for this state, together
+	// with her own to_remote output.
+	bobToLocal := wire.OutPoint{Hash: *breachTXID, Index: 2}
+	justiceTx := ht.AssertOutpointInMempool(bobToLocal)
 	for _, txIn := range justiceTx.TxIn {
 		require.Equal(ht, *breachTXID, txIn.PreviousOutPoint.Hash,
 			"justice tx not spending the breach transaction")
 	}
 	require.GreaterOrEqual(ht, len(justiceTx.TxIn), 2,
-		"justice tx should sweep both of Bob's outputs")
+		"justice tx should sweep Bob's to_local and Carol's to_remote")
 
 	ht.RestartNode(carol)
 	ht.AssertNumPendingSweeps(carol, 1)

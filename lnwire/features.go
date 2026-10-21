@@ -344,6 +344,9 @@ const (
 	// remote party may generate them by any method, including jointly
 	// across k-of-n signers.
 	//
+	// This even bit is only valid in channel_type: a node must not set it
+	// in init or node_announcement, where only the optional bit is used.
+	//
 	// Specified as 266/267 in the fork's BOLTs (lightning-blake2b/bolts#17).
 	IndependentSecretsRequired FeatureBit = 266
 
