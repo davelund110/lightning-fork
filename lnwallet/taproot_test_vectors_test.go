@@ -197,6 +197,10 @@ type taprootTestContext struct {
 	localCsvDelay uint16
 	commitHeight  uint64
 
+	// unifiedSigs makes the test channels carry option_unified_sigs, for
+	// the vectors of BOLT 3's "Simple taproot channels".
+	unifiedSigs bool
+
 	t *testing.T
 }
 
@@ -771,6 +775,9 @@ func createTaprootTestChannelsForVectors(tc *taprootTestContext,
 	fundingTxIn := wire.NewTxIn(prevOut, nil, nil)
 
 	chanType := taprootChanType
+	if tc.unifiedSigs {
+		chanType |= channeldb.UnifiedSigsBit
+	}
 
 	// Channel configurations using all deterministic keys.
 	remoteCfg := channeldb.ChannelConfig{
@@ -1500,6 +1507,7 @@ func verifyTaprootVectors(t *testing.T) {
 					tc.fundingAmount,
 					tc.localFundingPrivkey,
 					tc.remoteFundingPrivkey,
+					txscript.SigHashDefault,
 				)
 			})
 		}
@@ -1512,7 +1520,8 @@ func verifyTaprootVectors(t *testing.T) {
 // witness in the commitment transaction.
 func verifyMusig2PartialSigs(t *testing.T, txCase TransactionTestCase,
 	fundingPkScript []byte, fundingAmt btcutil.Amount,
-	localPrivKey, remotePrivKey *btcec.PrivateKey) {
+	localPrivKey, remotePrivKey *btcec.PrivateKey,
+	hashType txscript.SigHashType) {
 
 	t.Helper()
 
@@ -1563,7 +1572,7 @@ func verifyMusig2PartialSigs(t *testing.T, txCase TransactionTestCase,
 	)
 	sigHash, err := txscript.CalcTaprootSignatureHash(
 		txscript.NewTxSigHashes(commitTx, prevOutFetcher),
-		txscript.SigHashDefault, commitTx, 0, prevOutFetcher,
+		hashType, commitTx, 0, prevOutFetcher,
 	)
 	require.NoError(t, err)
 
@@ -1650,16 +1659,22 @@ func verifyMusig2PartialSigs(t *testing.T, txCase TransactionTestCase,
 	finalSig := localSession.FinalSig()
 	require.NotNil(t, finalSig)
 
-	// The commitment tx witness should contain the 64-byte Schnorr sig.
+	// The commitment tx witness should contain the 64-byte Schnorr sig,
+	// followed by the hash type byte unless it is SIGHASH_DEFAULT.
 	require.GreaterOrEqual(t, len(commitTx.TxIn[0].Witness), 1,
 		"commitment tx has no witness")
 
+	wantWitnessSig := finalSig.Serialize()
+	if hashType != txscript.SigHashDefault {
+		wantWitnessSig = append(wantWitnessSig, byte(hashType))
+	}
+
 	witnessSig := commitTx.TxIn[0].Witness[0]
-	require.Len(t, witnessSig, 64,
-		"witness sig should be 64 bytes")
+	require.Len(t, witnessSig, len(wantWitnessSig),
+		"witness sig has the wrong length")
 
 	require.Equal(t,
-		finalSig.Serialize(),
+		wantWitnessSig,
 		witnessSig,
 		"combined MuSig2 sig does not match commitment tx witness",
 	)

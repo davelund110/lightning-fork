@@ -266,6 +266,14 @@ const (
 	TaprootCommitWeight = (BaseTaprootCommitmentTxWeight +
 		WitnessHeaderSize + TaprootKeyPathWitnessSize)
 
+	// TaprootUnifiedCommitWeight 969 weight: a taproot commitment whose
+	// funding input is signed with option_unified_sigs, so its key-path
+	// signature carries the 0x21 hash type byte and is 65 bytes. BOLT 3
+	// fixes this figure, since both peers compute the commitment fee from
+	// it.
+	TaprootUnifiedCommitWeight = (BaseTaprootCommitmentTxWeight +
+		WitnessHeaderSize + TaprootKeyPathCustomSighashWitnessSize)
+
 	// HTLCWeight 172 weight.
 	HTLCWeight = witnessScaleFactor * HTLCSize
 

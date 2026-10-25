@@ -238,6 +238,12 @@ type MusigSession struct {
 	// aggregate key and session.
 	tapscriptTweak fn.Option[input.MuSig2Tweaks]
 
+	// sigHashType is the hash type of the key-path spend this session signs
+	// and verifies: SIGHASH_DEFAULT, or SIGHASH_ALL with the unified opt-in
+	// (0x21) on a channel with option_unified_sigs. See
+	// TaprootCommitSigHashType.
+	sigHashType txscript.SigHashType
+
 	// customNonceRand is an optional custom random source used to generate
 	// deterministic JIT signing nonces. This should only be set in tests
 	// that need reproducible MuSig2 signatures.
@@ -257,6 +263,7 @@ func NewPartialMusigSession(verificationNonce musig2.Nonces,
 	localKey, remoteKey keychain.KeyDescriptor, signer input.MuSig2Signer,
 	inputTxOut *wire.TxOut, commitType MusigCommitType,
 	tapscriptTweak fn.Option[input.MuSig2Tweaks],
+	sigHashType txscript.SigHashType,
 	customNonceRand fn.Option[io.Reader]) *MusigSession {
 
 	signerKeys := []*btcec.PublicKey{localKey.PubKey, remoteKey.PubKey}
@@ -274,6 +281,7 @@ func NewPartialMusigSession(verificationNonce musig2.Nonces,
 		signer:          signer,
 		commitType:      commitType,
 		tapscriptTweak:  tapscriptTweak,
+		sigHashType:     sigHashType,
 		customNonceRand: customNonceRand,
 	}
 }
@@ -338,8 +346,10 @@ func (m *MusigSession) FinalizeSession(signingNonce musig2.Nonces) error {
 
 // taprootKeyspendSighash generates the sighash for a taproot key spend. As
 // this is a musig2 channel output, the keyspend is the only path we can take.
+// With the unified opt-in in hashType, this is the unified signature hash
+// for a taproot key-path spend rather than BIP 341's.
 func taprootKeyspendSighash(tx *wire.MsgTx, pkScript []byte,
-	value int64) ([]byte, error) {
+	value int64, hashType txscript.SigHashType) ([]byte, error) {
 
 	prevOutputFetcher := txscript.NewCannedPrevOutputFetcher(
 		pkScript, value,
@@ -348,8 +358,20 @@ func taprootKeyspendSighash(tx *wire.MsgTx, pkScript []byte,
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutputFetcher)
 
 	return txscript.CalcTaprootSignatureHash(
-		sigHashes, txscript.SigHashDefault, tx, 0, prevOutputFetcher,
+		sigHashes, hashType, tx, 0, prevOutputFetcher,
 	)
+}
+
+// WitnessSig returns the final key-path signature as it goes in the
+// witness: the 64-byte signature, followed by the hash type byte unless the
+// session signs under SIGHASH_DEFAULT.
+func (m *MusigSession) WitnessSig(sig *schnorr.Signature) []byte {
+	sigBytes := sig.Serialize()
+	if m.sigHashType == txscript.SigHashDefault {
+		return sigBytes
+	}
+
+	return append(sigBytes, byte(m.sigHashType))
 }
 
 // SignCommit signs the passed commitment w/ the current signing (relative
@@ -399,7 +421,7 @@ func (m *MusigSession) SignCommit(tx *wire.MsgTx) (*MusigPartialSig, error) {
 	// Next we can sign, we'll need to generate the sighash for their
 	// commitment transaction.
 	sigHash, err := taprootKeyspendSighash(
-		tx, m.inputTxOut.PkScript, m.inputTxOut.Value,
+		tx, m.inputTxOut.PkScript, m.inputTxOut.Value, m.sigHashType,
 	)
 	if err != nil {
 		return nil, err
@@ -437,7 +459,7 @@ func (m *MusigSession) Refresh(verificationNonce *musig2.Nonces,
 	return NewPartialMusigSession(
 		*verificationNonce, m.localKey, m.remoteKey, m.signer,
 		m.inputTxOut, m.commitType, m.tapscriptTweak,
-		m.customNonceRand,
+		m.sigHashType, m.customNonceRand,
 	), nil
 }
 
@@ -545,6 +567,7 @@ func (m *MusigSession) VerifyCommitSig(commitTx *wire.MsgTx,
 	// generate the sighash that the remote party should have signed.
 	sigHash, err := taprootKeyspendSighash(
 		commitTx, m.inputTxOut.PkScript, m.inputTxOut.Value,
+		m.sigHashType,
 	)
 	if err != nil {
 		return nil, err
@@ -627,6 +650,10 @@ type MusigSessionCfg struct {
 	// MuSig2 public key used in the session.
 	TapscriptTweak fn.Option[chainhash.Hash]
 
+	// SigHashType is the hash type of the key-path spend both sessions
+	// sign and verify, from TaprootCommitSigHashType.
+	SigHashType txscript.SigHashType
+
 	// CustomNonceRand is an optional custom random source for generating
 	// deterministic JIT signing nonces. This should only be set in tests
 	// that need reproducible MuSig2 signatures.
@@ -659,12 +686,12 @@ func NewMusigPairSession(cfg *MusigSessionCfg) *MusigPairSession {
 	localSession := NewPartialMusigSession(
 		cfg.LocalNonce, cfg.LocalKey, cfg.RemoteKey, cfg.Signer,
 		cfg.InputTxOut, LocalMusigCommit, tapscriptTweak,
-		cfg.CustomNonceRand,
+		cfg.SigHashType, cfg.CustomNonceRand,
 	)
 	remoteSession := NewPartialMusigSession(
 		cfg.RemoteNonce, cfg.LocalKey, cfg.RemoteKey, cfg.Signer,
 		cfg.InputTxOut, RemoteMusigCommit, tapscriptTweak,
-		cfg.CustomNonceRand,
+		cfg.SigHashType, cfg.CustomNonceRand,
 	)
 
 	return &MusigPairSession{

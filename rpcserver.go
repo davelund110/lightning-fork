@@ -4135,12 +4135,7 @@ func (r *rpcServer) fetchPendingOpenChannels() (pendingOpenChannels, error) {
 		// broadcast.
 		// TODO(roasbeef): query for funding tx from wallet, display
 		// that also?
-		var witnessWeight int64
-		if pendingChan.ChanType.IsTaproot() {
-			witnessWeight = input.TaprootKeyPathWitnessSize
-		} else {
-			witnessWeight = input.WitnessCommitmentTxWeight
-		}
+		witnessWeight := lnwallet.CommitWitnessWeight(pendingChan.ChanType)
 
 		localCommitment := pendingChan.LocalCommitment
 		utx := btcutil.NewTx(localCommitment.CommitTx)
@@ -5100,12 +5095,7 @@ func createRPCOpenChannel(ctx context.Context, r *rpcServer,
 	// estimated weight of the witness to calculate the weight of
 	// the transaction if it were to be immediately unilaterally
 	// broadcast.
-	var witnessWeight int64
-	if dbChannel.ChanType.IsTaproot() {
-		witnessWeight = input.TaprootKeyPathWitnessSize
-	} else {
-		witnessWeight = input.WitnessCommitmentTxWeight
-	}
+	witnessWeight := lnwallet.CommitWitnessWeight(dbChannel.ChanType)
 
 	localCommit := dbChannel.LocalCommitment
 	utx := btcutil.NewTx(localCommit.CommitTx)

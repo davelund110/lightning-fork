@@ -564,11 +564,13 @@ func TestRequireUnifiedSigsOnOpen(t *testing.T) {
 		remote: noExplicit,
 		opens:  true,
 	}, {
+		// The simple taproot types take the bit like any other, so a
+		// taproot channel opens past the activation.
 		name:     "a taproot type",
 		local:    withUnified,
 		remote:   withUnified,
 		chanType: &taproot,
-		opens:    false,
+		opens:    true,
 	}}
 	for _, tc := range funderCases {
 		t.Run("funder: "+tc.name, func(t *testing.T) {

@@ -396,6 +396,39 @@ func CommitSigHashType(chanType channeldb.ChannelType) txscript.SigHashType {
 	return unifiedIf(chanType, txscript.SigHashAll)
 }
 
+// TaprootCommitSigHashType returns the sighash type of the MuSig2 signature
+// that spends a taproot channel's funding output, for the commitment and the
+// cooperative close alike. A simple taproot channel signs under
+// SIGHASH_DEFAULT, which has no hash type byte and so cannot carry the
+// unified opt-in; with option_unified_sigs it signs SIGHASH_ALL with the
+// opt-in instead, 0x21, as BOLT 3's "Simple taproot channels" requires.
+func TaprootCommitSigHashType(
+	chanType channeldb.ChannelType) txscript.SigHashType {
+
+	if chanType.HasUnifiedSigs() {
+		return txscript.SigHashAll | txscript.SigHashUnified
+	}
+
+	return txscript.SigHashDefault
+}
+
+// CommitWitnessWeight returns the expected weight of the witness that spends
+// the funding output, before the commitment transaction is signed: the
+// 2-of-2 multisig witness, or for a taproot channel the single key-path
+// signature, which is one byte longer under option_unified_sigs.
+func CommitWitnessWeight(chanType channeldb.ChannelType) int64 {
+	switch {
+	case chanType.IsTaproot() && chanType.HasUnifiedSigs():
+		return input.TaprootKeyPathCustomSighashWitnessSize
+
+	case chanType.IsTaproot():
+		return input.TaprootKeyPathWitnessSize
+
+	default:
+		return input.WitnessCommitmentTxWeight
+	}
+}
+
 // unifiedIf adds the unified signature hash bit to a BOLT 3 hash type when the
 // channel negotiated it. The rule is exactly that: whatever the protocol says
 // this signature commits to, plus the bit, so SIGHASH_ALL becomes 0x21 and the
@@ -449,6 +482,14 @@ func HtlcSecondLevelInputSequence(chanType channeldb.ChannelType) uint32 {
 // SIGHASH_DEFAULT for taproot channels or SIGHASH_ALL otherwise where it is
 // off.
 func sweepSigHash(chanType channeldb.ChannelType) txscript.SigHashType {
+	// A channel with option_unified_sigs opts its own spends in as well,
+	// whatever the node-wide setting: BOLT 3 requires it for every
+	// signature such a channel makes, bar a container that holds only 64
+	// bytes, which the watchtower path handles on its own.
+	if chanType.HasUnifiedSigs() {
+		return txscript.SigHashAll | txscript.SigHashUnified
+	}
+
 	return input.SoleSignerSigHash(chanType.IsTaproot())
 }
 
@@ -521,6 +562,11 @@ func SecondLevelHtlcScript(chanType channeldb.ChannelType, initiator bool,
 // CommitWeight returns the base commitment weight before adding HTLCs.
 func CommitWeight(chanType channeldb.ChannelType) lntypes.WeightUnit {
 	switch {
+	// Under option_unified_sigs the funding input's MuSig2 signature
+	// carries the 0x21 hash type byte, one more witness byte.
+	case chanType.IsTaproot() && chanType.HasUnifiedSigs():
+		return input.TaprootUnifiedCommitWeight
+
 	case chanType.IsTaproot():
 		return input.TaprootCommitWeight
 

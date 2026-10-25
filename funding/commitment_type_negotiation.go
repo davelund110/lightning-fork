@@ -46,10 +46,11 @@ var (
 // thing either side can check.
 //
 // A nil type, which no open carries any more now that BOLT 2 requires an
-// explicit channel_type, is refused all the same. Taproot types never carry
-// it (see withUnifiedSigs), so they are refused too until the bit is defined
-// for MuSig2 signatures. Existing
-// channels are not affected: this runs only when a channel is opened.
+// explicit channel_type, is refused all the same. The simple taproot types
+// carry the bit like any other (BOLT 3, "Simple taproot channels"); the
+// taproot overlay type never does (see withUnifiedSigs), so it is refused.
+// Existing channels are not affected: this runs only when a channel is
+// opened.
 func requireUnifiedSigs(chanType *lnwire.ChannelType,
 	local *lnwire.FeatureVector) error {
 
@@ -84,9 +85,10 @@ func requireUnifiedSigs(chanType *lnwire.ChannelType,
 // Nothing reported the difference, and privkeyio's build refuses such a type
 // outright, so the channel was both unbound and unable to interoperate.
 //
-// Taproot is excluded deliberately, for the reason explicitNegotiateCommitment-
-// Type gives: the spec doesn't define option_unified_sigs for taproot channel
-// types.
+// The simple taproot types take the bit too: BOLT 3 defines it for them, with
+// 0x21 in place of SIGHASH_DEFAULT on the MuSig2 key-path signature. The
+// taproot overlay type is excluded, for the reason explicitNegotiateCommitment-
+// Type gives.
 func withUnifiedSigs(chanType lnwire.ChannelType, local,
 	remote *lnwire.FeatureVector) lnwire.ChannelType {
 
@@ -95,7 +97,7 @@ func withUnifiedSigs(chanType lnwire.ChannelType, local,
 	}
 
 	features := lnwire.RawFeatureVector(chanType)
-	if isTaprootType(features) {
+	if isTaprootOverlayType(features) {
 		return chanType
 	}
 
@@ -145,14 +147,13 @@ func withAddOns(chanType lnwire.ChannelType, local,
 	)
 }
 
-// isTaprootType reports whether a channel type is one whose commitment is
-// signed with MuSig2, which the unified bit cannot yet be combined with: the
-// simple taproot types and the taproot overlay type that Taproot Assets
-// channels use, which is taproot underneath.
-func isTaprootType(features lnwire.RawFeatureVector) bool {
-	return features.IsSet(lnwire.SimpleTaprootChannelsRequiredFinal) ||
-		features.IsSet(lnwire.SimpleTaprootChannelsRequiredStaging) ||
-		features.IsSet(lnwire.SimpleTaprootOverlayChansRequired)
+// isTaprootOverlayType reports whether a channel type is the taproot overlay
+// type that Taproot Assets channels use. It is signed with MuSig2 like the
+// simple taproot types, but BOLT 3 defines option_unified_sigs only for the
+// simple taproot types, and a node MUST NOT combine the bit with any other
+// channel type built on MuSig2.
+func isTaprootOverlayType(features lnwire.RawFeatureVector) bool {
+	return features.IsSet(lnwire.SimpleTaprootOverlayChansRequired)
 }
 
 // funderChannelType is the channel type a funder proposes when its caller
@@ -230,14 +231,13 @@ func explicitNegotiateCommitmentType(channelType lnwire.ChannelType, local,
 			return 0, errUnsupportedChannelType
 		}
 
-		// Not on a taproot channel. There the commitment signature is
-		// a MuSig2 partial signature, which carries no hash type, over
-		// a BIP341 digest: opting in would change the digest the two
-		// sides sign, not the messages. The spec doesn't define it for
-		// taproot channel types (lightning-blake2b/bolts#12), and until
-		// it does, refusing is better than agreeing to a channel whose
-		// two sides would sign different digests.
-		if isTaprootType(channelFeatures) {
+		// Not on the taproot overlay type. BOLT 3 defines the bit for
+		// the simple taproot types, whose MuSig2 key-path signature
+		// becomes 0x21 over the unified digest, but for no other
+		// channel type built on MuSig2: refusing is better than
+		// agreeing to a channel whose two sides could sign different
+		// digests.
+		if isTaprootOverlayType(channelFeatures) {
 			return 0, errUnsupportedChannelType
 		}
 

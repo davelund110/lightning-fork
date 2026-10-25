@@ -3077,12 +3077,7 @@ func (lc *LightningChannel) fetchCommitmentView(
 	}
 	fee := lc.channelState.Capacity - totalOut
 
-	var witnessWeight int64
-	if lc.channelState.ChanType.IsTaproot() {
-		witnessWeight = input.TaprootKeyPathWitnessSize
-	} else {
-		witnessWeight = input.WitnessCommitmentTxWeight
-	}
+	witnessWeight := CommitWitnessWeight(lc.channelState.ChanType)
 
 	// Since the transaction is not signed yet, we use the witness weight
 	// used for weight calculation.
@@ -7190,6 +7185,11 @@ type TaprootSignedCommitTxInputs struct {
 	// create the funding output. This is an optional field that should
 	// only be set for taproot channels.
 	TapscriptRoot fn.Option[chainhash.Hash]
+
+	// SigHashType is the hash type of the funding output's key-path
+	// signature, from TaprootCommitSigHashType: SIGHASH_DEFAULT, or 0x21
+	// for a channel with option_unified_sigs.
+	SigHashType txscript.SigHashType
 }
 
 // GetSignedCommitTx creates the witness stack of a channel commitment
@@ -7233,7 +7233,8 @@ func GetSignedCommitTx(inputs SignedCommitTxInputs,
 		musigSession := NewPartialMusigSession(
 			*localNonce, inputs.OurKey, inputs.TheirKey, signer,
 			inputs.SignDesc.Output, LocalMusigCommit,
-			tapscriptTweak, fn.None[io.Reader](),
+			tapscriptTweak, taproot.SigHashType,
+			fn.None[io.Reader](),
 		)
 
 		var remoteSig lnwire.PartialSigWithNonce
@@ -7276,9 +7277,10 @@ func GetSignedCommitTx(inputs SignedCommitTxInputs,
 				"partial sigs: %w", err)
 		}
 
-		// The witness is the single keyspend schnorr sig.
+		// The witness is the single keyspend schnorr sig, with its
+		// hash type byte under option_unified_sigs.
 		witness = wire.TxWitness{
-			finalSig.Serialize(),
+			musigSession.WitnessSig(finalSig),
 		}
 
 	// Otherwise, the final witness we generate will be a normal p2wsh
@@ -7332,6 +7334,9 @@ func (lc *LightningChannel) getSignedCommitTx() (*wire.MsgTx, error) {
 			CommitHeight:         lc.currentHeight,
 			TaprootNonceProducer: lc.taprootNonceProducer,
 			TapscriptRoot:        lc.channelState.TapscriptRoot,
+			SigHashType: TaprootCommitSigHashType(
+				lc.channelState.ChanType,
+			),
 		})
 	}
 
@@ -9252,9 +9257,10 @@ func (lc *LightningChannel) CompleteCooperativeClose(
 				"final co-op close sig: %w", err)
 		}
 
-		// The witness for a keyspend is just the signature itself.
+		// The witness for a keyspend is just the signature itself,
+		// with its hash type byte under option_unified_sigs.
 		closeTx.TxIn[0].Witness = wire.TxWitness{
-			finalSchnorrSig.Serialize(),
+			opts.musigSession.WitnessSig(finalSchnorrSig),
 		}
 	} else {
 		// For regular channels, we'll need to , construct the witness
@@ -9492,12 +9498,7 @@ func NewAnchorResolution(chanState *channeldb.OpenChannel,
 		signDesc.TapTweak = scriptTree.TapTweak()
 	}
 
-	var witnessWeight int64
-	if chanState.ChanType.IsTaproot() {
-		witnessWeight = input.TaprootKeyPathWitnessSize
-	} else {
-		witnessWeight = input.WitnessCommitmentTxWeight
-	}
+	witnessWeight := CommitWitnessWeight(chanState.ChanType)
 
 	// Calculate commit tx weight. This commit tx doesn't yet include the
 	// witness spending the funding output, so we add the (worst case)
@@ -10645,13 +10646,16 @@ func (lc *LightningChannel) InitRemoteMusigNonces(remoteNonce *musig2.Nonces,
 	// TODO(roasbeef): propagate rename of signing and verification nonces
 
 	sessionCfg := &MusigSessionCfg{
-		LocalKey:        localChanCfg.MultiSigKey,
-		RemoteKey:       remoteChanCfg.MultiSigKey,
-		LocalNonce:      *localNonce,
-		RemoteNonce:     *remoteNonce,
-		Signer:          lc.Signer,
-		InputTxOut:      &lc.fundingOutput,
-		TapscriptTweak:  lc.channelState.TapscriptRoot,
+		LocalKey:       localChanCfg.MultiSigKey,
+		RemoteKey:      remoteChanCfg.MultiSigKey,
+		LocalNonce:     *localNonce,
+		RemoteNonce:    *remoteNonce,
+		Signer:         lc.Signer,
+		InputTxOut:     &lc.fundingOutput,
+		TapscriptTweak: lc.channelState.TapscriptRoot,
+		SigHashType: TaprootCommitSigHashType(
+			lc.channelState.ChanType,
+		),
 		CustomNonceRand: lc.opts.customSigningRand,
 	}
 	lc.musigSessions = NewMusigPairSession(

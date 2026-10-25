@@ -1828,7 +1828,8 @@ func (l *LightningWallet) handleContributionMsg(req *addContributionMsg) {
 // partial signature.
 func genMusigSession(ourContribution, theirContribution *ChannelContribution,
 	signer input.MuSig2Signer, fundingOutput *wire.TxOut,
-	tapscriptRoot fn.Option[chainhash.Hash]) *MusigPairSession {
+	tapscriptRoot fn.Option[chainhash.Hash],
+	chanType channeldb.ChannelType) *MusigPairSession {
 
 	return NewMusigPairSession(&MusigSessionCfg{
 		LocalKey:       ourContribution.MultiSigKey,
@@ -1838,6 +1839,7 @@ func genMusigSession(ourContribution, theirContribution *ChannelContribution,
 		Signer:         signer,
 		InputTxOut:     fundingOutput,
 		TapscriptTweak: tapscriptRoot,
+		SigHashType:    TaprootCommitSigHashType(chanType),
 	})
 }
 
@@ -1890,6 +1892,7 @@ func (l *LightningWallet) signCommitTx(pendingReservation *ChannelReservation,
 				ourContribution, theirContribution,
 				l.Cfg.Signer, fundingOutput,
 				pendingReservation.partialState.TapscriptRoot,
+				pendingReservation.partialState.ChanType,
 			)
 			pendingReservation.musigSessions = musigSessions
 		}
@@ -2322,6 +2325,7 @@ func (l *LightningWallet) verifyCommitSig(res *ChannelReservation,
 				res.ourContribution, res.theirContribution,
 				l.Cfg.Signer, fundingOutput,
 				res.partialState.TapscriptRoot,
+				res.partialState.ChanType,
 			)
 		}
 

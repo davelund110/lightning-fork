@@ -54,6 +54,7 @@ func (m *MusigChanCloser) ProposalClosingOpts() (
 		*m.remoteNonce, localKey, remoteKey,
 		m.channel.Signer, m.channel.FundingTxOut(),
 		lnwallet.RemoteMusigCommit, tapscriptTweak,
+		lnwallet.TaprootCommitSigHashType(m.channel.State().ChanType),
 		fn.None[io.Reader](),
 	)
 

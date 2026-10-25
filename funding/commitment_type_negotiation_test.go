@@ -637,17 +637,23 @@ func TestUnifiedSigsNegotiation(t *testing.T) {
 		require.ErrorIs(t, err, errUnsupportedChannelType)
 	})
 
-	t.Run("refused on taproot", func(t *testing.T) {
+	t.Run("accepted on simple taproot", func(t *testing.T) {
 		t.Parallel()
 
-		// The taproot commitment signature is a MuSig2 partial
-		// signature over a BIP341 digest. Opting that in is a wire
-		// change rather than a different hash type, so agreeing to it
-		// would mean two sides signing different digests.
-		_, _, err := negotiateCommitmentType(
+		// BOLT 3 defines the bit for the simple taproot types: the
+		// MuSig2 key-path signature is 0x21 over the unified digest,
+		// and no message changes.
+		chanType, commitType, err := negotiateCommitmentType(
 			&taprootUnified, bothSupport, bothSupport,
 		)
-		require.ErrorIs(t, err, errUnsupportedChannelType)
+		require.NoError(t, err)
+		require.Equal(
+			t, lnwallet.CommitmentTypeSimpleTaprootFinal,
+			commitType,
+		)
+
+		features := lnwire.RawFeatureVector(*chanType)
+		require.True(t, features.IsSet(lnwire.UnifiedSigsRequired))
 	})
 
 	t.Run("proposed implicitly when both support it", func(t *testing.T) {
@@ -758,16 +764,16 @@ func TestUnifiedSigsNegotiation(t *testing.T) {
 		require.False(t, features.IsSet(lnwire.UnifiedSigsRequired))
 	})
 
-	t.Run("a named taproot type does not get it", func(t *testing.T) {
+	t.Run("a named taproot type gets it", func(t *testing.T) {
 		t.Parallel()
 
 		taprootPlain := lnwire.ChannelType(*lnwire.NewRawFeatureVector(
 			lnwire.SimpleTaprootChannelsRequiredFinal,
 		))
 
-		// Adding it here would refuse the channel outright, since
-		// taproot plus the bit is an error. Asking for a taproot
-		// channel must still give one.
+		// Like any other named type, a taproot type is given the bit
+		// when both sides support it, so the channel opens past the
+		// activation.
 		chanType, commitType, err := negotiateCommitmentType(
 			funderChannelType(
 				&taprootPlain, bothSupport, bothSupport,
@@ -781,7 +787,7 @@ func TestUnifiedSigsNegotiation(t *testing.T) {
 		)
 
 		features := lnwire.RawFeatureVector(*chanType)
-		require.False(t, features.IsSet(lnwire.UnifiedSigsRequired))
+		require.True(t, features.IsSet(lnwire.UnifiedSigsRequired))
 	})
 
 	t.Run("the tweakless fall-back carries it too", func(t *testing.T) {

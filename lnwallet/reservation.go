@@ -296,9 +296,14 @@ func NewChannelReservation(capacity, localFundingAmt btcutil.Amount,
 	// Based on the channel type, we determine the initial commit weight
 	// and fee.
 	commitWeight := input.CommitWeight
-	if req.CommitType.IsTaproot() {
+	switch {
+	// Under option_unified_sigs a taproot commitment's key-path signature
+	// carries the 0x21 hash type byte, one more witness byte.
+	case req.CommitType.IsTaproot() && req.UnifiedSigs:
+		commitWeight = input.TaprootUnifiedCommitWeight
+	case req.CommitType.IsTaproot():
 		commitWeight = input.TaprootCommitWeight
-	} else if req.CommitType.HasAnchors() {
+	case req.CommitType.HasAnchors():
 		commitWeight = input.AnchorCommitWeight
 	}
 	commitFee := req.CommitFeePerKw.FeeForWeight(
